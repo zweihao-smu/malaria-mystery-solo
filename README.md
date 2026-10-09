@@ -1,5 +1,7 @@
 # 昏迷的建筑工程师 · 单机模拟课堂版
 
+**在线体验：https://zweihao-smu.github.io/malaria-mystery-solo/**
+
 恶性疟剧本杀的**单机网页版**：你选择 1 个角色，其余 5 个角色由机器人同学自动扮演。无需服务器、无需联网对战，打开网页即可体验多人课堂的协作氛围。
 
 ## 与另外两个版本的区别
@@ -34,6 +36,13 @@ npm run dev    # http://localhost:5175
 
 ```bash
 npm run build  # 产物在 dist/
+```
+
+部署到 GitHub Pages（已配置好，vite base 为 `/malaria-mystery-solo/`）：
+
+```bash
+npm run build
+npm run deploy   # 把 dist 推到 gh-pages 分支
 ```
 
 ## 技术说明
