@@ -3,7 +3,6 @@
     <div class="home-page__hero">
       <div class="home-page__badge">医学剧本杀 · 单机模拟课堂</div>
       <h1>昏迷的建筑工程师</h1>
-      <h2>恶性疟疑案</h2>
 
       <p class="home-page__desc">
         35岁建筑工程师从非洲归国后突发昏迷……
