@@ -1,5 +1,5 @@
 import { reactive, computed } from 'vue';
-import { chapters, clues, questions, roles, scoringRules } from '../data/gameData.js';
+import { chapters, questions, scoringRules } from '../data/gameData.js';
 
 // 与单人版/多人版存档分开，互不影响
 const STORAGE_KEY = 'malaria-mystery-solo-state';
@@ -11,6 +11,7 @@ function createDefaultState() {
     unlockedClueIds: [],
     answeredQuestionIds: [],
     score: 0,
+    ending: null, // null=进行中/未触发, 'good' | 'relapse' | 'bad'
     startedAt: null,
     lastSavedAt: null
   };
@@ -100,24 +101,35 @@ export function useGameState() {
     }
   }
 
+  // 记录结局；bad ending 直接结束游戏（不再进入后续章节）
+  function setEnding(ending) {
+    state.ending = ending;
+    if (ending === 'bad') {
+      state.currentChapterIndex = chapters.length;
+    }
+    saveState(state);
+  }
+
   function resetGame() {
     Object.assign(state, createDefaultState());
     localStorage.removeItem(STORAGE_KEY);
   }
 
   function getGrade(totalScore) {
-    // 按角色权限计算满分：全部题目分 + 我可见的线索数（公开 + 本角色专属），
-    // 否则任何角色都无法达到“优秀”
-    const role = roles.find(r => r.id === state.selectedRoleId);
-    const clueMax = role
-      ? clues.filter(c => c.owner === '公开' || role.clueIds.includes(c.id)).length
-      : clues.length;
-    const questionMax = chapters.reduce(
-      (sum, ch) => sum + ch.questionIds.reduce(
+    // 满分按实际走过的路径计算：
+    // 线索全收集（好结局版第四章无线索）+ 章节题目 + 关键抉择分
+    // bad ending 只经历前两章，相应缩小分母
+    const isGoodPath = state.ending !== 'relapse';
+    const chs = state.ending === 'bad' ? chapters.slice(0, 2) : chapters;
+    let max = 0;
+    chs.forEach(ch => {
+      const clueCount = (ch.storyCardsAlt && isGoodPath) ? (ch.clueIdsAlt ?? []).length : ch.clueIds.length;
+      max += clueCount;
+      max += ch.questionIds.reduce(
         (s, qid) => s + (questions.find(q => q.id === qid)?.points || 0), 0
-      ), 0
-    );
-    const max = questionMax + clueMax;
+      );
+      if (ch.decisionId) max += scoringRules.correctAnswer;
+    });
     const percent = Math.min(100, Math.round((totalScore / max) * 100));
     for (const threshold of scoringRules.thresholds) {
       if (percent >= threshold.min) {
@@ -137,6 +149,7 @@ export function useGameState() {
     unlockClues,
     answerQuestion,
     nextChapter,
+    setEnding,
     resetGame,
     getGrade
   };

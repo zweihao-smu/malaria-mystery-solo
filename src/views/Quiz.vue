@@ -2,65 +2,115 @@
   <div class="quiz-page">
     <ScoreBoard :players="boardPlayers" />
 
-    <div class="quiz-page__header">
-      <span class="quiz-page__badge">关键决策</span>
-      <h2>{{ currentChapter.title }}</h2>
-      <div class="quiz-page__progress">
-        第 {{ currentQuestionIndex + 1 }} / {{ chapterQuestions.length }} 题
-        · 已作答 {{ answeredCount }}/6
-      </div>
-    </div>
-
-    <div class="quiz-page__card">
-      <h3>{{ currentQuestion.text }}</h3>
-
-      <div class="quiz-page__options">
-        <ChoiceButton
-          v-for="(option, idx) in currentQuestion.options"
-          :key="idx"
-          :label="option"
-          :selected="selectedIndex === idx"
-          :status="getOptionStatus(idx)"
-          @select="selectOption(idx)"
-        />
-      </div>
-
-      <div v-if="answered" class="quiz-page__feedback">
-        <div class="quiz-page__result" :class="isCorrect ? 'correct' : 'wrong'">
-          {{ isCorrect ? '✓ 回答正确！' : '✗ 回答错误' }}
+    <!-- ============ 答题 ============ -->
+    <template v-if="step === 'quiz'">
+      <div class="quiz-page__header">
+        <span class="quiz-page__badge">关键决策</span>
+        <h2>{{ currentChapter.title }}</h2>
+        <div class="quiz-page__progress">
+          第 {{ currentQuestionIndex + 1 }} / {{ chapterQuestions.length }} 题
+          · 已作答 {{ answeredCount }}/6
         </div>
-        <p>{{ currentQuestion.explanation }}</p>
       </div>
-    </div>
+
+      <div class="quiz-page__card">
+        <h3>{{ currentQuestion.text }}</h3>
+
+        <div class="quiz-page__options">
+          <ChoiceButton
+            v-for="(option, idx) in currentQuestion.options"
+            :key="idx"
+            :label="option"
+            :selected="selectedIndex === idx"
+            :status="getOptionStatus(idx)"
+            @select="selectOption(idx)"
+          />
+        </div>
+
+        <div v-if="answered" class="quiz-page__feedback">
+          <div class="quiz-page__result" :class="isCorrect ? 'correct' : 'wrong'">
+            {{ isCorrect ? '✓ 回答正确！' : '✗ 回答错误' }}
+          </div>
+          <p>{{ currentQuestion.explanation }}</p>
+        </div>
+      </div>
+    </template>
+
+    <!-- ============ 关键抉择（决定结局走向） ============ -->
+    <template v-else>
+      <div class="quiz-page__header">
+        <span class="quiz-page__badge quiz-page__badge--decision">⚠️ 关键抉择</span>
+        <h2>{{ currentChapter.title }}</h2>
+        <div class="quiz-page__progress">这个决定将影响患者的结局</div>
+      </div>
+
+      <div class="quiz-page__card quiz-page__card--decision">
+        <h3>{{ decision.text }}</h3>
+
+        <div class="quiz-page__options">
+          <ChoiceButton
+            v-for="(option, idx) in decision.options"
+            :key="idx"
+            :label="option"
+            :selected="decisionIndex === idx"
+            :status="getDecisionStatus(idx)"
+            @select="selectDecision(idx)"
+          />
+        </div>
+
+        <div v-if="decisionMade" class="quiz-page__feedback">
+          <div class="quiz-page__result" :class="decisionCorrect ? 'correct' : 'wrong'">
+            {{ decisionCorrect ? '✓ 决策正确' : '✗ 决策失误' }}
+          </div>
+          <p>{{ decisionCorrect ? decision.rightFeedback : decision.wrongFeedback }}</p>
+        </div>
+      </div>
+    </template>
 
     <BotFeed :items="room.feed" />
 
     <div class="quiz-page__actions">
-      <button
-        v-if="!answered"
-        class="btn btn--primary"
-        :disabled="selectedIndex === null"
-        @click="submitAnswer"
-      >提交答案</button>
+      <template v-if="step === 'quiz'">
+        <button
+          v-if="!answered"
+          class="btn btn--primary"
+          :disabled="selectedIndex === null"
+          @click="submitAnswer"
+        >提交答案</button>
 
-      <button
-        v-else-if="currentQuestionIndex < chapterQuestions.length - 1"
-        class="btn btn--primary"
-        @click="nextQuestion"
-      >下一题</button>
+        <button
+          v-else-if="currentQuestionIndex < chapterQuestions.length - 1"
+          class="btn btn--primary"
+          @click="nextQuestion"
+        >下一题</button>
 
-      <button
-        v-else
-        class="btn btn--primary"
-        @click="finishChapter"
-      >完成本章</button>
+        <button
+          v-else
+          class="btn btn--primary"
+          @click="finishQuiz"
+        >{{ decision ? '完成答题，做出关键抉择' : '完成本章' }}</button>
+      </template>
+
+      <template v-else>
+        <button
+          v-if="!decisionMade"
+          class="btn btn--primary"
+          :disabled="decisionIndex === null"
+          @click="submitDecision"
+        >确认抉择</button>
+        <button
+          v-else
+          class="btn btn--primary"
+          @click="continueAfterDecision"
+        >继续</button>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
-import { chapters, questions } from '../data/gameData.js';
+import { chapters, questions, decisions } from '../data/gameData.js';
 import { useGameState } from '../composables/useGameState.js';
 import { useRoom } from '../composables/useRoom.js';
 import ChoiceButton from '../components/ChoiceButton.vue';
@@ -69,8 +119,8 @@ import BotFeed from '../components/BotFeed.vue';
 
 const emit = defineEmits(['change-page']);
 
-const { state, answerQuestion, nextChapter } = useGameState();
-const { room, startQuestion, flushAnswers } = useRoom();
+const { state, answerQuestion, nextChapter, setEnding } = useGameState();
+const { room, startQuestion, flushAnswers, pauseBots } = useRoom();
 
 const currentChapter = computed(() => chapters[state.currentChapterIndex]);
 
@@ -80,10 +130,20 @@ const chapterQuestions = computed(() => {
     .filter(Boolean);
 });
 
+// 本章结束后的关键抉择（若有）
+const decision = computed(() =>
+  decisions.find(d => d.id === currentChapter.value.decisionId)
+);
+
+const step = ref('quiz'); // quiz | decision
 const currentQuestionIndex = ref(0);
 const selectedIndex = ref(null);
 const answered = ref(false);
 const isCorrect = ref(false);
+
+const decisionIndex = ref(null);
+const decisionMade = ref(false);
+const decisionCorrect = ref(false);
 
 const currentQuestion = computed(() => chapterQuestions.value[currentQuestionIndex.value]);
 
@@ -107,11 +167,14 @@ const boardPlayers = computed(() => [
   ...room.bots.map(b => ({ id: b.id, name: b.name, roleId: b.roleId, score: b.score }))
 ]);
 
+function correctIdxOf(q) {
+  return q.options.findIndex(o => o.startsWith(q.correct + '.'));
+}
+
 function getOptionStatus(idx) {
   if (!answered.value) return '';
-  const correctIdx = currentQuestion.value.options.findIndex(o => o.startsWith(currentQuestion.value.correct + '.'));
-  if (idx === correctIdx) return 'correct';
-  if (idx === selectedIndex.value && idx !== correctIdx) return 'wrong';
+  if (idx === correctIdxOf(currentQuestion.value)) return 'correct';
+  if (idx === selectedIndex.value) return 'wrong';
   return '';
 }
 
@@ -123,8 +186,7 @@ function selectOption(idx) {
 function submitAnswer() {
   if (selectedIndex.value === null) return;
   const q = currentQuestion.value;
-  const selectedOption = q.options[selectedIndex.value];
-  const correct = selectedOption.startsWith(q.correct + '.');
+  const correct = selectedIndex.value === correctIdxOf(q);
   isCorrect.value = correct;
   answered.value = true;
   answerQuestion(q.id, correct, q.points);
@@ -139,8 +201,54 @@ function nextQuestion() {
   isCorrect.value = false;
 }
 
-function finishChapter() {
+function finishQuiz() {
   flushAnswers(currentQuestion.value.id);
+  if (decision.value) {
+    step.value = 'decision';
+  } else {
+    advanceChapter();
+  }
+}
+
+// ---- 关键抉择 ----
+function selectDecision(idx) {
+  if (decisionMade.value) return;
+  decisionIndex.value = idx;
+}
+
+function getDecisionStatus(idx) {
+  if (!decisionMade.value) return '';
+  if (idx === correctIdxOf(decision.value)) return 'correct';
+  if (idx === decisionIndex.value) return 'wrong';
+  return '';
+}
+
+function submitDecision() {
+  if (decisionIndex.value === null) return;
+  decisionCorrect.value = decisionIndex.value === correctIdxOf(decision.value);
+  decisionMade.value = true;
+  // 抉择也计分，与题目一致
+  answerQuestion(decision.value.id, decisionCorrect.value, 5);
+}
+
+function continueAfterDecision() {
+  if (decisionCorrect.value) {
+    advanceChapter();
+    return;
+  }
+  const ending = decision.value.wrongEnding;
+  setEnding(ending);
+  if (ending === 'bad') {
+    // 误诊漏诊：游戏直接结束
+    pauseBots();
+    emit('change-page', 'end-game');
+  } else {
+    // 再燃结局：进入第四章（再燃剧情）
+    advanceChapter();
+  }
+}
+
+function advanceChapter() {
   nextChapter();
   if (state.currentChapterIndex >= chapters.length) {
     emit('change-page', 'end-game');
@@ -174,6 +282,10 @@ function finishChapter() {
   margin-bottom: 10px;
 }
 
+.quiz-page__badge--decision {
+  background: var(--error-color);
+}
+
 .quiz-page__header h2 {
   margin: 0 0 8px 0;
   color: var(--text-color);
@@ -190,6 +302,10 @@ function finishChapter() {
   padding: 24px;
   box-shadow: 0 2px 10px rgba(0,0,0,0.06);
   margin-bottom: 20px;
+}
+
+.quiz-page__card--decision {
+  border: 2px solid var(--error-color);
 }
 
 .quiz-page__card h3 {

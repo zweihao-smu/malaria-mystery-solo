@@ -125,6 +125,29 @@ export function useRoom() {
     });
   }
 
+  // 玩家向某角色提问获取其专属线索：先在动态里发问题，机器人稍后回答并共享线索
+  function askClue(roleId, clueId, onShared) {
+    const clue = clues.find(c => c.id === clueId);
+    const bot = room.bots.find(b => b.roleId === roleId);
+    if (!clue || !bot) return false;
+    pushFeed(`你向${roleShortName(roleId)}提问：「${clue.title}」的情况如何？`, 'ask');
+    later(() => {
+      pushFeed(`${bot.name}（${roleShortName(roleId)}）：${clue.content}（线索《${clue.title}》已共享）`, 'clue');
+      // 机器人也记为已掌握该线索（计入其分数）
+      if (!bot.unlockedClueIds.includes(clueId)) {
+        bot.unlockedClueIds.push(clueId);
+        bot.score += scoringRules.clueUnlocked;
+      }
+      onShared?.();
+    }, 1200 + Math.random() * 1500);
+    return true;
+  }
+
+  // 暂停机器人（如触发 bad ending 时），但保留数据用于结算页排行榜
+  function pauseBots() {
+    clearTimers();
+  }
+
   function answeredCount(questionId, myAnswered) {
     return room.bots.filter(b => b.answers.some(a => a.id === questionId)).length + (myAnswered ? 1 : 0);
   }
@@ -143,6 +166,8 @@ export function useRoom() {
     startQuestion,
     flushAnswers,
     fastForwardBots,
+    askClue,
+    pauseBots,
     answeredCount,
     destroyRoom,
     visibleClueIds

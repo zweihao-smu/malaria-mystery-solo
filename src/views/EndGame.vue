@@ -2,7 +2,12 @@
   <div class="end-game">
     <div class="end-game__card">
       <div class="end-game__badge">游戏结束</div>
-      <h2>最终诊断报告</h2>
+
+      <div class="end-game__ending" :class="`end-game__ending--${endingKey}`">
+        <div class="end-game__ending-icon">{{ endingInfo.icon }}</div>
+        <h2>{{ endingInfo.title }}</h2>
+        <p>{{ endingInfo.text }}</p>
+      </div>
 
       <div class="end-game__grade">
         <div class="end-game__score">{{ finalInfo.percent }}</div>
@@ -71,7 +76,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { clues, knowledgeSummary } from '../data/gameData.js';
+import { clues, knowledgeSummary, endings } from '../data/gameData.js';
 import { useGameState } from '../composables/useGameState.js';
 import { useRoom } from '../composables/useRoom.js';
 import ClueCard from '../components/ClueCard.vue';
@@ -81,6 +86,10 @@ const emit = defineEmits(['change-page']);
 
 const { state, resetGame, getGrade } = useGameState();
 const { room, destroyRoom } = useRoom();
+
+// 未触发分支（一路答对）即好结局
+const endingKey = computed(() => state.ending || 'good');
+const endingInfo = computed(() => endings[endingKey.value]);
 
 const finalInfo = computed(() => getGrade(state.score));
 
@@ -148,6 +157,42 @@ function goHome() {
 .end-game__card h2 {
   margin: 0 0 16px 0;
   color: var(--text-color);
+}
+
+.end-game__ending {
+  border-radius: 12px;
+  padding: 16px;
+  margin: 4px 0 8px 0;
+}
+
+.end-game__ending--good {
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.end-game__ending--relapse {
+  background: rgba(255, 152, 0, 0.12);
+}
+
+.end-game__ending--bad {
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.end-game__ending-icon {
+  font-size: 36px;
+  margin-bottom: 6px;
+}
+
+.end-game__ending h2 {
+  margin: 0 0 8px 0;
+  font-size: 22px;
+}
+
+.end-game__ending p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  text-align: left;
 }
 
 .end-game__grade {
